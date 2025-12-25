@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>出席確認用QR作成</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <style>
+        body { font-family: sans-serif; text-align: center; padding: 20px; }
+        input { width: 80%; padding: 10px; margin: 10px 0; font-size: 16px; }
+        #qrcode { margin-top: 20px; display: flex; justify-content: center; }
+    </style>
+</head>
+<body>
+    <h2>出席確認用QR生成</h2>
+    <input type="text" id="studentId" placeholder="学籍番号 (例: 2025001)">
+    <input type="text" id="studentName" placeholder="氏名 (例: 山田太郎)">
+    <button onclick="generateQR()" style="padding: 10px 20px;">QRコードを作成</button>
+    
+    <div id="qrcode"></div>
+
+    <script>
+        const qrcode = new QRCode(document.getElementById("qrcode"), {
+            width: 200,
+            height: 200
+        });
+
+        function generateQR() {
+            const id = document.getElementById("studentId").value;
+            const name = document.getElementById("studentName").value;
+            if (!id || !name) {
+                alert("学籍番号と氏名を入力してください");
+                return;
+            }
+            // カンマ区切りのデータを作成
+            const data = `${id},${name}`;
+            qrcode.makeCode(data);
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>出席スキャナー</title>
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    <style>
+        body { font-family: sans-serif; text-align: center; }
+        #preview { width: 100%; max-width: 400px; margin: 10px auto; border: 1px solid #ccc; }
+        table { width: 90%; margin: 20px auto; border-collapse: collapse; }
+        th, td { border: 1px solid #ddd; padding: 8px; }
+    </style>
+</head>
+<body>
+    <h2>出席スキャナー</h2>
+    <video id="video" playsinline></video>
+    <canvas id="canvas" style="display:none;"></canvas>
+    
+    <div>
+        <button onclick="downloadCSV()" style="padding: 10px; background: #28a745; color: white; border: none; border-radius: 5px;">CSVで保存</button>
+    </div>
+
+    <table id="list">
+        <thead><tr><th>学籍番号</th><th>氏名</th><th>時刻</th></tr></thead>
+        <tbody id="listBody"></tbody>
+    </table>
+
+    <script>
+        const video = document.getElementById("video");
+        const canvas = document.getElementById("canvas");
+        const ctx = canvas.getContext("2d", { willReadFrequently: true });
+        const listBody = document.getElementById("listBody");
+        const attendanceSet = new Set(); // 重複スキャン防止用
+
+        // カメラ起動
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } }).then(stream => {
+            video.srcObject = stream;
+            video.setAttribute("playsinline", true);
+            video.play();
+            requestAnimationFrame(tick);
+        });
+
+        function tick() {
+            if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                canvas.height = video.videoHeight;
+                canvas.width = video.videoWidth;
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const code = jsQR(imageData.data, imageData.width, imageData.height);
+
+                if (code) {
+                    processData(code.data);
+                }
+            }
+            requestAnimationFrame(tick);
+        }
+
+        function processData(data) {
+            if (attendanceSet.has(data)) return; // すでにスキャン済みなら無視
+            
+            attendanceSet.add(data);
+            const [id, name] = data.split(",");
+            const time = new Date().toLocaleTimeString();
+
+            const row = `<tr><td>${id}</td><td>${name}</td><td>${time}</td></tr>`;
+            listBody.insertAdjacentHTML("afterbegin", row);
+            
+            // 読み取り成功のフィードバック（音の代わりに一瞬画面を光らせるなど）
+            document.body.style.backgroundColor = "#e0ffe0";
+            setTimeout(() => document.body.style.backgroundColor = "white", 300);
+        }
+
+        function downloadCSV() {
+            let csv = "学籍番号,氏名,時刻\n";
+            attendanceSet.forEach(data => {
+                csv += data + "," + new Date().toLocaleTimeString() + "\n";
+            });
+            const blob = new Blob(["\uFEFF" + csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.download = "attendance_list.csv";
+            link.click();
+        }
+    </script>
+</body>
+</html>
