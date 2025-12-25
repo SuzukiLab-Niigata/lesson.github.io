@@ -70,8 +70,41 @@
         function processData(data) {
             if (attendanceSet.has(data)) return; // すでにスキャン済みなら無視
 
+            // データ形式のバリデーション
+            if (!data || typeof data !== 'string') {
+                console.error('無効なQRコードデータ:', data);
+                return;
+            }
+
+            const parts = data.split(",");
+            if (parts.length !== 2) {
+                console.error('QRコードの形式が正しくありません:', data);
+                // エラーフィードバック
+                document.body.style.backgroundColor = "#ffe0e0";
+                setTimeout(() => document.body.style.backgroundColor = "white", 300);
+                return;
+            }
+
+            const id = parts[0]?.trim();
+            const name = parts[1]?.trim();
+
+            // 学籍番号と氏名のバリデーション
+            if (!id || !name) {
+                console.error('学籍番号または氏名が空です:', data);
+                document.body.style.backgroundColor = "#ffe0e0";
+                setTimeout(() => document.body.style.backgroundColor = "white", 300);
+                return;
+            }
+
+            // 学籍番号は英数字のみ
+            if (!/^[a-zA-Z0-9]+$/.test(id)) {
+                console.error('学籍番号は英数字のみです:', id);
+                document.body.style.backgroundColor = "#ffe0e0";
+                setTimeout(() => document.body.style.backgroundColor = "white", 300);
+                return;
+            }
+
             attendanceSet.add(data);
-            const [id, name] = data.split(",");
             const now = new Date();
             const date = now.toLocaleDateString('ja-JP');
             const time = now.toLocaleTimeString('ja-JP');
@@ -84,7 +117,7 @@
             const row = `<tr><td>${id}</td><td>${name}</td><td>${date}</td><td>${time}</td></tr>`;
             listBody.insertAdjacentHTML("afterbegin", row);
 
-            // 読み取り成功のフィードバック
+            // 読み取り成功のフィードバック（緑）
             document.body.style.backgroundColor = "#e0ffe0";
             setTimeout(() => document.body.style.backgroundColor = "white", 300);
         }
