@@ -139,7 +139,7 @@
                 return;
             }
 
-            const id = parts[0]?.trim();
+            let id = parts[0]?.trim().toUpperCase(); // 大文字に正規化
             const name = parts[1]?.trim();
 
             if (!id || !name) {
@@ -148,7 +148,7 @@
                 return;
             }
 
-            if (!/^[a-zA-Z0-9]+$/.test(id)) {
+            if (!/^[A-Z0-9]+$/.test(id)) {
                 console.error('学籍番号は英数字のみです:', id);
                 flashError();
                 return;
@@ -237,9 +237,9 @@
 
                     const parts = line.split(',');
                     if (parts.length >= 2) {
-                        const id = parts[0].trim();
+                        const id = parts[0].trim().toUpperCase(); // 大文字に正規化
                         const name = parts[1].trim();
-                        if (id && name && /^[a-zA-Z0-9]+$/.test(id)) {
+                        if (id && name && /^[A-Z0-9]+$/.test(id)) {
                             studentList.set(id, name);
                             validCount++;
                         }

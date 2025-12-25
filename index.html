@@ -22,9 +22,9 @@
     <h2>出席確認用QR生成</h2>
 
     <div class="input-group">
-        <input type="text" id="studentId" placeholder="学籍番号 (例: 2025001)" oninput="validateStudentId()">
+        <input type="text" id="studentId" placeholder="学籍番号 (例: F24001)" oninput="validateStudentId()">
         <div class="error-msg" id="idError"></div>
-        <div class="help-text">※ 半角英数字のみ入力できます</div>
+        <div class="help-text">※ 半角英数字のみ。英字は自動的に大文字になります</div>
     </div>
 
     <div class="input-group">
@@ -47,10 +47,14 @@
         function validateStudentId() {
             const input = document.getElementById("studentId");
             const errorMsg = document.getElementById("idError");
-            const value = input.value.trim();
+            let value = input.value;
 
-            // 半角英数字のみを許可（全角を自動変換）
-            const alphanumericOnly = value.replace(/[^a-zA-Z0-9]/g, '');
+            // 半角英数字のみを許可（全角や記号を削除）
+            let alphanumericOnly = value.replace(/[^a-zA-Z0-9]/g, '');
+
+            // 英字を自動的に大文字に変換
+            alphanumericOnly = alphanumericOnly.toUpperCase();
+
             if (value !== alphanumericOnly) {
                 input.value = alphanumericOnly;
             }
@@ -63,7 +67,7 @@
             }
 
             // 英数字チェック
-            if (/^[a-zA-Z0-9]+$/.test(alphanumericOnly)) {
+            if (/^[A-Z0-9]+$/.test(alphanumericOnly)) {
                 input.className = 'valid';
                 errorMsg.textContent = '';
                 updateButton();
@@ -79,9 +83,9 @@
         function validateName() {
             const input = document.getElementById("studentName");
             const errorMsg = document.getElementById("nameError");
-            const value = input.value.trim();
+            const value = input.value;
 
-            if (value === '') {
+            if (value.trim() === '') {
                 input.className = '';
                 errorMsg.textContent = '';
                 updateButton();
@@ -106,14 +110,14 @@
             const btn = document.getElementById("generateBtn");
             const id = document.getElementById("studentId").value.trim();
             const name = document.getElementById("studentName").value.trim();
-            const idValid = /^[a-zA-Z0-9]+$/.test(id);
+            const idValid = /^[A-Z0-9]+$/.test(id); // 大文字のみチェック
             const nameValid = name !== '' && !name.includes(',');
 
             btn.disabled = !(idValid && nameValid);
         }
 
         function generateQR() {
-            const id = document.getElementById("studentId").value.trim();
+            const id = document.getElementById("studentId").value.trim().toUpperCase(); // 大文字に変換
             const name = document.getElementById("studentName").value.trim();
 
             // 最終バリデーション
@@ -122,8 +126,8 @@
                 return;
             }
 
-            if (!/^[a-zA-Z0-9]+$/.test(id)) {
-                alert("学籍番号は半角英数字のみで入力してください");
+            if (!/^[A-Z0-9]+$/.test(id)) {
+                alert("学籍番号は半角英数字（大文字）のみで入力してください");
                 return;
             }
 
