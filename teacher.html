@@ -5,66 +5,353 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>出席スキャナー</title>
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script src="https://apis.google.com/js/api.js"></script>
     <style>
-        body { font-family: sans-serif; text-align: center; }
-        #preview { width: 100%; max-width: 400px; margin: 10px auto; border: 1px solid #ccc; }
-        table { width: 90%; margin: 20px auto; border-collapse: collapse; }
-        th, td { border: 1px solid #ddd; padding: 8px; }
-        .config { max-width: 600px; margin: 20px auto; padding: 15px; background: #f5f5f5; border-radius: 8px; }
-        .config input { width: 100%; padding: 8px; margin: 5px 0; box-sizing: border-box; }
-        .status { margin: 10px 0; padding: 10px; border-radius: 5px; }
+        body { font-family: sans-serif; text-align: center; padding: 20px; }
+        .config { max-width: 700px; margin: 20px auto; padding: 20px; background: #f5f5f5; border-radius: 8px; }
+        .status { margin: 10px 0; padding: 10px; border-radius: 5px; font-weight: bold; }
         .status.connected { background: #d4edda; color: #155724; }
         .status.disconnected { background: #f8d7da; color: #721c24; }
+        .status.info { background: #d1ecf1; color: #0c5460; }
+        table { width: 95%; max-width: 800px; margin: 20px auto; border-collapse: collapse; }
+        th, td { border: 1px solid #ddd; padding: 8px; }
+        th { background: #4285f4; color: white; }
+        button { padding: 10px 20px; margin: 5px; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; }
+        .btn-primary { background: #4285f4; color: white; }
+        .btn-success { background: #28a745; color: white; }
+        .btn-danger { background: #dc3545; color: white; }
+        .btn-secondary { background: #6c757d; color: white; }
+        #video { width: 100%; max-width: 400px; margin: 10px auto; border: 2px solid #ddd; border-radius: 8px; }
+        #shareUrl { width: 100%; padding: 8px; margin: 10px 0; font-size: 12px; background: #e9ecef; border: 1px solid #ced4da; border-radius: 4px; }
+        .hidden { display: none; }
+        .user-info { margin: 10px 0; padding: 10px; background: white; border-radius: 5px; }
     </style>
 </head>
 <body>
-    <h2>出席スキャナー</h2>
+    <h2>📋 出席スキャナー</h2>
 
     <div class="config">
-        <h3>Google Spreadsheet設定</h3>
-        <input type="text" id="webAppUrl" placeholder="Google Apps Script Web App URL">
-        <button onclick="saveConfig()" style="padding: 8px 15px; margin: 5px; background: #007bff; color: white; border: none; border-radius: 5px;">設定を保存</button>
-        <div id="status" class="status disconnected">未接続</div>
+        <h3>Google Spreadsheet連携</h3>
+        <div id="loginSection">
+            <p>Googleアカウントでログインして、出席記録用のスプレッドシートを自動作成します</p>
+            <p style="font-size: 12px; color: #666;">
+                ⚠️ 注意: このアプリを使用するには、Google Cloud Consoleでプロジェクトを作成し、<br>
+                APIキーとクライアントIDを設定する必要があります。<br>
+                詳細はREADMEをご覧ください。
+            </p>
+            <input type="text" id="apiKey" placeholder="Google API Key" style="width: 100%; padding: 8px; margin: 5px 0;">
+            <input type="text" id="clientId" placeholder="Google Client ID" style="width: 100%; padding: 8px; margin: 5px 0;">
+            <button class="btn-primary" onclick="saveCredentials()">認証情報を保存してログイン</button>
+        </div>
+
+        <div id="userSection" class="hidden">
+            <div class="user-info">
+                <strong>ログイン中:</strong> <span id="userName"></span>
+                <button class="btn-secondary" onclick="signOut()" style="margin-left: 10px; padding: 5px 10px;">ログアウト</button>
+            </div>
+            <div id="status" class="status info">準備中...</div>
+            <div id="spreadsheetInfo" class="hidden">
+                <p><strong>スプレッドシート:</strong> <a id="spreadsheetLink" href="" target="_blank">開く</a></p>
+                <p style="font-size: 12px;">このURLを共有すると、他の人も同じスプレッドシートに記録できます：</p>
+                <input type="text" id="shareUrl" readonly onclick="this.select()">
+                <button class="btn-secondary" onclick="copyShareUrl()">URLをコピー</button>
+            </div>
+        </div>
     </div>
 
-    <video id="video" playsinline></video>
-    <canvas id="canvas" style="display:none;"></canvas>
+    <div id="scannerSection" class="hidden">
+        <video id="video" playsinline></video>
+        <canvas id="canvas" style="display:none;"></canvas>
 
-    <div>
-        <button onclick="downloadCSV()" style="padding: 10px; background: #28a745; color: white; border: none; border-radius: 5px; margin: 5px;">CSVで保存</button>
-        <button onclick="clearData()" style="padding: 10px; background: #dc3545; color: white; border: none; border-radius: 5px; margin: 5px;">データをクリア</button>
+        <div>
+            <button class="btn-success" onclick="downloadCSV()">CSVで保存</button>
+            <button class="btn-danger" onclick="clearData()">データをクリア</button>
+        </div>
+
+        <table id="list">
+            <thead><tr><th>学籍番号</th><th>氏名</th><th>日付</th><th>時刻</th><th>状態</th></tr></thead>
+            <tbody id="listBody"></tbody>
+        </table>
     </div>
-
-    <table id="list">
-        <thead><tr><th>学籍番号</th><th>氏名</th><th>時刻</th><th>状態</th></tr></thead>
-        <tbody id="listBody"></tbody>
-    </table>
 
     <script>
+        // 設定
+        const SCOPES = 'https://www.googleapis.com/auth/spreadsheets';
+        const DISCOVERY_DOC = 'https://sheets.googleapis.com/$discovery/rest?version=v4';
+
+        // グローバル変数
+        let tokenClient;
+        let gapiInited = false;
+        let gisInited = false;
+        let accessToken = null;
+        let spreadsheetId = null;
+
+        const attendanceData = [];
+        const attendanceSet = new Set();
+
+        // QRコードスキャン関連
         const video = document.getElementById("video");
         const canvas = document.getElementById("canvas");
         const ctx = canvas.getContext("2d", { willReadFrequently: true });
         const listBody = document.getElementById("listBody");
-        const attendanceData = []; // 出席データ配列
-        const attendanceSet = new Set(); // 重複スキャン防止用
-        let webAppUrl = localStorage.getItem('webAppUrl') || '';
 
-        // 設定を読み込み
+        // 初期化
         window.addEventListener('load', () => {
-            if (webAppUrl) {
-                document.getElementById('webAppUrl').value = webAppUrl;
-                updateStatus(true);
+            // URLパラメータからスプレッドシートIDを取得
+            const urlParams = new URLSearchParams(window.location.search);
+            const sheetIdFromUrl = urlParams.get('sheetId');
+            if (sheetIdFromUrl) {
+                spreadsheetId = sheetIdFromUrl;
+                localStorage.setItem('spreadsheetId', spreadsheetId);
+            } else {
+                spreadsheetId = localStorage.getItem('spreadsheetId');
+            }
+
+            // 保存された認証情報を読み込み
+            const savedApiKey = localStorage.getItem('googleApiKey');
+            const savedClientId = localStorage.getItem('googleClientId');
+            if (savedApiKey && savedClientId) {
+                document.getElementById('apiKey').value = savedApiKey;
+                document.getElementById('clientId').value = savedClientId;
             }
         });
 
-        // カメラ起動
-        navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } }).then(stream => {
-            video.srcObject = stream;
-            video.setAttribute("playsinline", true);
-            video.play();
-            requestAnimationFrame(tick);
-        });
+        // GAPI初期化
+        function gapiLoaded() {
+            gapi.load('client', initializeGapiClient);
+        }
 
+        async function initializeGapiClient() {
+            const apiKey = localStorage.getItem('googleApiKey');
+            if (!apiKey) return;
+
+            await gapi.client.init({
+                apiKey: apiKey,
+                discoveryDocs: [DISCOVERY_DOC],
+            });
+            gapiInited = true;
+            maybeEnableButtons();
+        }
+
+        // GIS初期化
+        function gisLoaded() {
+            const clientId = localStorage.getItem('googleClientId');
+            if (!clientId) return;
+
+            tokenClient = google.accounts.oauth2.initTokenClient({
+                client_id: clientId,
+                scope: SCOPES,
+                callback: '', // 後で設定
+            });
+            gisInited = true;
+            maybeEnableButtons();
+        }
+
+        function maybeEnableButtons() {
+            if (gapiInited && gisInited) {
+                console.log('Google API準備完了');
+            }
+        }
+
+        // 認証情報を保存してログイン
+        function saveCredentials() {
+            const apiKey = document.getElementById('apiKey').value.trim();
+            const clientId = document.getElementById('clientId').value.trim();
+
+            if (!apiKey || !clientId) {
+                alert('API KeyとClient IDを両方入力してください');
+                return;
+            }
+
+            localStorage.setItem('googleApiKey', apiKey);
+            localStorage.setItem('googleClientId', clientId);
+
+            // 初期化を再実行
+            gapiLoaded();
+            gisLoaded();
+
+            // 少し待ってからサインイン
+            setTimeout(handleAuthClick, 500);
+        }
+
+        // サインイン
+        function handleAuthClick() {
+            tokenClient.callback = async (resp) => {
+                if (resp.error !== undefined) {
+                    throw (resp);
+                }
+                accessToken = gapi.client.getToken().access_token;
+                document.getElementById('loginSection').classList.add('hidden');
+                document.getElementById('userSection').classList.remove('hidden');
+                document.getElementById('scannerSection').classList.remove('hidden');
+
+                // ユーザー情報を表示
+                const userInfo = await getUserInfo();
+                document.getElementById('userName').textContent = userInfo.name;
+
+                // スプレッドシートを作成または取得
+                await setupSpreadsheet();
+
+                // カメラ起動
+                startCamera();
+            };
+
+            if (gapi.client.getToken() === null) {
+                tokenClient.requestAccessToken({prompt: 'consent'});
+            } else {
+                tokenClient.requestAccessToken({prompt: ''});
+            }
+        }
+
+        // ユーザー情報取得
+        async function getUserInfo() {
+            const response = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+                headers: { Authorization: `Bearer ${accessToken}` }
+            });
+            return await response.json();
+        }
+
+        // スプレッドシート設定
+        async function setupSpreadsheet() {
+            if (spreadsheetId) {
+                // 既存のスプレッドシートを使用
+                updateStatus('既存のスプレッドシートに接続しました', 'connected');
+                updateSpreadsheetInfo();
+            } else {
+                // 新しいスプレッドシートを作成
+                await createSpreadsheet();
+            }
+        }
+
+        // スプレッドシート作成
+        async function createSpreadsheet() {
+            updateStatus('スプレッドシートを作成中...', 'info');
+
+            try {
+                const response = await gapi.client.sheets.spreadsheets.create({
+                    properties: {
+                        title: `出席記録_${new Date().toLocaleDateString()}`
+                    },
+                    sheets: [{
+                        properties: {
+                            title: '出席データ',
+                            gridProperties: {
+                                frozenRowCount: 1
+                            }
+                        }
+                    }]
+                });
+
+                spreadsheetId = response.result.spreadsheetId;
+                localStorage.setItem('spreadsheetId', spreadsheetId);
+
+                // ヘッダー行を追加
+                await gapi.client.sheets.spreadsheets.values.update({
+                    spreadsheetId: spreadsheetId,
+                    range: '出席データ!A1:E1',
+                    valueInputOption: 'RAW',
+                    resource: {
+                        values: [['学籍番号', '氏名', '日付', '時刻', '記録日時']]
+                    }
+                });
+
+                // ヘッダー行をフォーマット
+                await gapi.client.sheets.spreadsheets.batchUpdate({
+                    spreadsheetId: spreadsheetId,
+                    resource: {
+                        requests: [{
+                            repeatCell: {
+                                range: {
+                                    sheetId: 0,
+                                    startRowIndex: 0,
+                                    endRowIndex: 1
+                                },
+                                cell: {
+                                    userEnteredFormat: {
+                                        backgroundColor: { red: 0.26, green: 0.52, blue: 0.96 },
+                                        textFormat: { foregroundColor: { red: 1, green: 1, blue: 1 }, bold: true }
+                                    }
+                                },
+                                fields: 'userEnteredFormat(backgroundColor,textFormat)'
+                            }
+                        }]
+                    }
+                });
+
+                updateStatus('スプレッドシートを作成しました！', 'connected');
+                updateSpreadsheetInfo();
+                updateShareUrl();
+
+            } catch (error) {
+                console.error('スプレッドシート作成エラー:', error);
+                updateStatus('スプレッドシート作成に失敗しました', 'disconnected');
+            }
+        }
+
+        // スプレッドシート情報を更新
+        function updateSpreadsheetInfo() {
+            const link = document.getElementById('spreadsheetLink');
+            link.href = `https://docs.google.com/spreadsheets/d/${spreadsheetId}`;
+            document.getElementById('spreadsheetInfo').classList.remove('hidden');
+            updateShareUrl();
+        }
+
+        // 共有URL更新
+        function updateShareUrl() {
+            const baseUrl = window.location.origin + window.location.pathname;
+            const shareUrl = `${baseUrl}?sheetId=${spreadsheetId}`;
+            document.getElementById('shareUrl').value = shareUrl;
+        }
+
+        // URL をコピー
+        function copyShareUrl() {
+            const input = document.getElementById('shareUrl');
+            input.select();
+            document.execCommand('copy');
+            alert('URLをコピーしました！このURLを他の人と共有してください。');
+        }
+
+        // ステータス更新
+        function updateStatus(message, type) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = message;
+            statusDiv.className = `status ${type}`;
+        }
+
+        // サインアウト
+        function signOut() {
+            const token = gapi.client.getToken();
+            if (token !== null) {
+                google.accounts.oauth2.revoke(token.access_token);
+                gapi.client.setToken('');
+            }
+            document.getElementById('loginSection').classList.remove('hidden');
+            document.getElementById('userSection').classList.add('hidden');
+            document.getElementById('scannerSection').classList.add('hidden');
+
+            // カメラ停止
+            if (video.srcObject) {
+                video.srcObject.getTracks().forEach(track => track.stop());
+            }
+        }
+
+        // カメラ起動
+        function startCamera() {
+            navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+                .then(stream => {
+                    video.srcObject = stream;
+                    video.setAttribute("playsinline", true);
+                    video.play();
+                    requestAnimationFrame(tick);
+                })
+                .catch(err => {
+                    console.error('カメラエラー:', err);
+                    alert('カメラの起動に失敗しました');
+                });
+        }
+
+        // QRコードスキャン
         function tick() {
             if (video.readyState === video.HAVE_ENOUGH_DATA) {
                 canvas.height = video.videoHeight;
@@ -80,71 +367,50 @@
             requestAnimationFrame(tick);
         }
 
-        function processData(data) {
-            if (attendanceSet.has(data)) return; // すでにスキャン済みなら無視
+        // データ処理
+        async function processData(data) {
+            if (attendanceSet.has(data)) return;
 
             attendanceSet.add(data);
             const [id, name] = data.split(",");
             const now = new Date();
-            const time = now.toLocaleTimeString();
-            const date = now.toLocaleDateString();
+            const date = now.toLocaleDateString('ja-JP');
+            const time = now.toLocaleTimeString('ja-JP');
+            const timestamp = now.toISOString();
 
-            // データを配列に保存
-            const record = { id, name, date, time };
+            const record = { id, name, date, time, timestamp };
             attendanceData.push(record);
 
-            // テーブルに行を追加（状態列を含む）
+            // テーブルに追加
             const row = document.createElement('tr');
-            row.innerHTML = `<td>${id}</td><td>${name}</td><td>${time}</td><td id="status-${id}">送信中...</td>`;
+            row.innerHTML = `<td>${id}</td><td>${name}</td><td>${date}</td><td>${time}</td><td id="status-${id}">送信中...</td>`;
             listBody.insertBefore(row, listBody.firstChild);
 
-            // 読み取り成功のフィードバック
+            // フィードバック
             document.body.style.backgroundColor = "#e0ffe0";
             setTimeout(() => document.body.style.backgroundColor = "white", 300);
 
-            // Google Spreadsheetに送信
-            sendToSpreadsheet(record, id);
+            // スプレッドシートに送信
+            await sendToSpreadsheet(record, id);
         }
 
-        function saveConfig() {
-            webAppUrl = document.getElementById('webAppUrl').value.trim();
-            if (!webAppUrl) {
-                alert('Web App URLを入力してください');
-                return;
-            }
-            localStorage.setItem('webAppUrl', webAppUrl);
-            updateStatus(true);
-            alert('設定を保存しました');
-        }
-
-        function updateStatus(connected) {
-            const statusDiv = document.getElementById('status');
-            if (connected && webAppUrl) {
-                statusDiv.className = 'status connected';
-                statusDiv.textContent = '接続済み';
-            } else {
-                statusDiv.className = 'status disconnected';
-                statusDiv.textContent = '未接続';
-            }
-        }
-
+        // スプレッドシートに送信
         async function sendToSpreadsheet(record, id) {
-            if (!webAppUrl) {
+            if (!spreadsheetId) {
                 updateStatusCell(id, '未設定');
                 return;
             }
 
             try {
-                const response = await fetch(webAppUrl, {
-                    method: 'POST',
-                    mode: 'no-cors',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify(record)
+                await gapi.client.sheets.spreadsheets.values.append({
+                    spreadsheetId: spreadsheetId,
+                    range: '出席データ!A:E',
+                    valueInputOption: 'RAW',
+                    resource: {
+                        values: [[record.id, record.name, record.date, record.time, record.timestamp]]
+                    }
                 });
 
-                // no-corsモードでは応答を読めないので、成功と見なす
                 updateStatusCell(id, '✓');
             } catch (error) {
                 console.error('送信エラー:', error);
@@ -152,18 +418,22 @@
             }
         }
 
+        // ステータスセル更新
         function updateStatusCell(id, status) {
             const cell = document.getElementById(`status-${id}`);
             if (cell) {
                 cell.textContent = status;
                 if (status === '✓') {
                     cell.style.color = 'green';
+                    cell.style.fontWeight = 'bold';
                 } else if (status === '✗') {
                     cell.style.color = 'red';
+                    cell.style.fontWeight = 'bold';
                 }
             }
         }
 
+        // CSV ダウンロード
         function downloadCSV() {
             let csv = "学籍番号,氏名,日付,時刻\n";
             attendanceData.forEach(record => {
@@ -172,18 +442,24 @@
             const blob = new Blob(["\uFEFF" + csv], { type: 'text/csv;charset=utf-8;' });
             const link = document.createElement("a");
             link.href = URL.createObjectURL(blob);
-            const filename = `attendance_${new Date().toLocaleDateString().replace(/\//g, '-')}.csv`;
-            link.download = filename;
+            link.download = `attendance_${new Date().toLocaleDateString('ja-JP').replace(/\//g, '-')}.csv`;
             link.click();
         }
 
+        // データクリア
         function clearData() {
-            if (confirm('出席データをクリアしますか？')) {
+            if (confirm('ローカルの出席データをクリアしますか？\n（スプレッドシートのデータは削除されません）')) {
                 attendanceData.length = 0;
                 attendanceSet.clear();
                 listBody.innerHTML = '';
             }
         }
+
+        // API読み込み時の初期化
+        setTimeout(() => {
+            if (typeof gapi !== 'undefined') gapiLoaded();
+            if (typeof google !== 'undefined') gisLoaded();
+        }, 1000);
     </script>
 </body>
 </html>
