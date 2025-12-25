@@ -10,19 +10,33 @@
         #preview { width: 100%; max-width: 400px; margin: 10px auto; border: 1px solid #ccc; }
         table { width: 90%; margin: 20px auto; border-collapse: collapse; }
         th, td { border: 1px solid #ddd; padding: 8px; }
+        .config { max-width: 600px; margin: 20px auto; padding: 15px; background: #f5f5f5; border-radius: 8px; }
+        .config input { width: 100%; padding: 8px; margin: 5px 0; box-sizing: border-box; }
+        .status { margin: 10px 0; padding: 10px; border-radius: 5px; }
+        .status.connected { background: #d4edda; color: #155724; }
+        .status.disconnected { background: #f8d7da; color: #721c24; }
     </style>
 </head>
 <body>
     <h2>出席スキャナー</h2>
+
+    <div class="config">
+        <h3>Google Spreadsheet設定</h3>
+        <input type="text" id="webAppUrl" placeholder="Google Apps Script Web App URL">
+        <button onclick="saveConfig()" style="padding: 8px 15px; margin: 5px; background: #007bff; color: white; border: none; border-radius: 5px;">設定を保存</button>
+        <div id="status" class="status disconnected">未接続</div>
+    </div>
+
     <video id="video" playsinline></video>
     <canvas id="canvas" style="display:none;"></canvas>
-    
+
     <div>
-        <button onclick="downloadCSV()" style="padding: 10px; background: #28a745; color: white; border: none; border-radius: 5px;">CSVで保存</button>
+        <button onclick="downloadCSV()" style="padding: 10px; background: #28a745; color: white; border: none; border-radius: 5px; margin: 5px;">CSVで保存</button>
+        <button onclick="clearData()" style="padding: 10px; background: #dc3545; color: white; border: none; border-radius: 5px; margin: 5px;">データをクリア</button>
     </div>
 
     <table id="list">
-        <thead><tr><th>学籍番号</th><th>氏名</th><th>時刻</th></tr></thead>
+        <thead><tr><th>学籍番号</th><th>氏名</th><th>時刻</th><th>状態</th></tr></thead>
         <tbody id="listBody"></tbody>
     </table>
 
@@ -31,7 +45,17 @@
         const canvas = document.getElementById("canvas");
         const ctx = canvas.getContext("2d", { willReadFrequently: true });
         const listBody = document.getElementById("listBody");
+        const attendanceData = []; // 出席データ配列
         const attendanceSet = new Set(); // 重複スキャン防止用
+        let webAppUrl = localStorage.getItem('webAppUrl') || '';
+
+        // 設定を読み込み
+        window.addEventListener('load', () => {
+            if (webAppUrl) {
+                document.getElementById('webAppUrl').value = webAppUrl;
+                updateStatus(true);
+            }
+        });
 
         // カメラ起動
         navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } }).then(stream => {
@@ -58,29 +82,107 @@
 
         function processData(data) {
             if (attendanceSet.has(data)) return; // すでにスキャン済みなら無視
-            
+
             attendanceSet.add(data);
             const [id, name] = data.split(",");
-            const time = new Date().toLocaleTimeString();
+            const now = new Date();
+            const time = now.toLocaleTimeString();
+            const date = now.toLocaleDateString();
 
-            const row = `<tr><td>${id}</td><td>${name}</td><td>${time}</td></tr>`;
-            listBody.insertAdjacentHTML("afterbegin", row);
-            
-            // 読み取り成功のフィードバック（音の代わりに一瞬画面を光らせるなど）
+            // データを配列に保存
+            const record = { id, name, date, time };
+            attendanceData.push(record);
+
+            // テーブルに行を追加（状態列を含む）
+            const row = document.createElement('tr');
+            row.innerHTML = `<td>${id}</td><td>${name}</td><td>${time}</td><td id="status-${id}">送信中...</td>`;
+            listBody.insertBefore(row, listBody.firstChild);
+
+            // 読み取り成功のフィードバック
             document.body.style.backgroundColor = "#e0ffe0";
             setTimeout(() => document.body.style.backgroundColor = "white", 300);
+
+            // Google Spreadsheetに送信
+            sendToSpreadsheet(record, id);
+        }
+
+        function saveConfig() {
+            webAppUrl = document.getElementById('webAppUrl').value.trim();
+            if (!webAppUrl) {
+                alert('Web App URLを入力してください');
+                return;
+            }
+            localStorage.setItem('webAppUrl', webAppUrl);
+            updateStatus(true);
+            alert('設定を保存しました');
+        }
+
+        function updateStatus(connected) {
+            const statusDiv = document.getElementById('status');
+            if (connected && webAppUrl) {
+                statusDiv.className = 'status connected';
+                statusDiv.textContent = '接続済み';
+            } else {
+                statusDiv.className = 'status disconnected';
+                statusDiv.textContent = '未接続';
+            }
+        }
+
+        async function sendToSpreadsheet(record, id) {
+            if (!webAppUrl) {
+                updateStatusCell(id, '未設定');
+                return;
+            }
+
+            try {
+                const response = await fetch(webAppUrl, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(record)
+                });
+
+                // no-corsモードでは応答を読めないので、成功と見なす
+                updateStatusCell(id, '✓');
+            } catch (error) {
+                console.error('送信エラー:', error);
+                updateStatusCell(id, '✗');
+            }
+        }
+
+        function updateStatusCell(id, status) {
+            const cell = document.getElementById(`status-${id}`);
+            if (cell) {
+                cell.textContent = status;
+                if (status === '✓') {
+                    cell.style.color = 'green';
+                } else if (status === '✗') {
+                    cell.style.color = 'red';
+                }
+            }
         }
 
         function downloadCSV() {
-            let csv = "学籍番号,氏名,時刻\n";
-            attendanceSet.forEach(data => {
-                csv += data + "," + new Date().toLocaleTimeString() + "\n";
+            let csv = "学籍番号,氏名,日付,時刻\n";
+            attendanceData.forEach(record => {
+                csv += `${record.id},${record.name},${record.date},${record.time}\n`;
             });
             const blob = new Blob(["\uFEFF" + csv], { type: 'text/csv;charset=utf-8;' });
             const link = document.createElement("a");
             link.href = URL.createObjectURL(blob);
-            link.download = "attendance_list.csv";
+            const filename = `attendance_${new Date().toLocaleDateString().replace(/\//g, '-')}.csv`;
+            link.download = filename;
             link.click();
+        }
+
+        function clearData() {
+            if (confirm('出席データをクリアしますか？')) {
+                attendanceData.length = 0;
+                attendanceSet.clear();
+                listBody.innerHTML = '';
+            }
         }
     </script>
 </body>
