@@ -110,16 +110,20 @@
             });
 
         function tick() {
-            if (video.readyState === video.HAVE_ENOUGH_DATA) {
-                canvas.height = video.videoHeight;
-                canvas.width = video.videoWidth;
-                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                const code = jsQR(imageData.data, imageData.width, imageData.height);
+            try {
+                if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                    canvas.height = video.videoHeight;
+                    canvas.width = video.videoWidth;
+                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                    const code = jsQR(imageData.data, imageData.width, imageData.height);
 
-                if (code) {
-                    processData(code.data);
+                    if (code) {
+                        processData(code.data);
+                    }
                 }
+            } catch (error) {
+                console.error('カメラ処理エラー:', error);
             }
             requestAnimationFrame(tick);
         }
@@ -166,54 +170,64 @@
 
         // 学生リストありモード
         function processRegisteredMode(id, name) {
-            // 登録チェック
-            if (!studentList.has(id)) {
-                console.error('学生リストに存在しない学籍番号:', id);
-                alert(`学籍番号 ${id} は登録されていません`);
+            try {
+                // 登録チェック
+                if (!studentList.has(id)) {
+                    console.error('学生リストに存在しない学籍番号:', id);
+                    alert(`学籍番号 ${id} は登録されていません`);
+                    flashError();
+                    return;
+                }
+
+                // 重複チェック（学籍番号ベース）
+                if (attendedIds.has(id)) {
+                    console.log('すでに出席済み:', id);
+                    return; // 無言で無視
+                }
+
+                // 出席登録
+                attendedIds.add(id);
+                const now = new Date();
+                const date = now.toLocaleDateString('ja-JP');
+                const time = now.toLocaleTimeString('ja-JP');
+
+                const record = { id, name, date, time };
+                attendanceData.push(record);
+
+                // リスト更新
+                updateRegisteredList();
+                flashSuccess();
+            } catch (error) {
+                console.error('出席登録エラー:', error);
                 flashError();
-                return;
             }
-
-            // 重複チェック（学籍番号ベース）
-            if (attendedIds.has(id)) {
-                console.log('すでに出席済み:', id);
-                return; // 無言で無視
-            }
-
-            // 出席登録
-            attendedIds.add(id);
-            const now = new Date();
-            const date = now.toLocaleDateString('ja-JP');
-            const time = now.toLocaleTimeString('ja-JP');
-
-            const record = { id, name, date, time };
-            attendanceData.push(record);
-
-            // リスト更新
-            updateRegisteredList();
-            flashSuccess();
         }
 
         // オープンモード
         function processOpenMode(id, name, data) {
-            // 重複チェック（QRデータ全体）
-            if (attendedIds.has(data)) {
-                return; // 無言で無視
+            try {
+                // 重複チェック（QRデータ全体）
+                if (attendedIds.has(data)) {
+                    return; // 無言で無視
+                }
+
+                attendedIds.add(data);
+                const now = new Date();
+                const date = now.toLocaleDateString('ja-JP');
+                const time = now.toLocaleTimeString('ja-JP');
+
+                const record = { id, name, date, time };
+                attendanceData.push(record);
+
+                // テーブルに追加
+                const row = `<tr class="present"><td>✓</td><td>${id}</td><td>${name}</td><td>${date}</td><td>${time}</td></tr>`;
+                listBody.insertAdjacentHTML("afterbegin", row);
+
+                flashSuccess();
+            } catch (error) {
+                console.error('出席登録エラー:', error);
+                flashError();
             }
-
-            attendedIds.add(data);
-            const now = new Date();
-            const date = now.toLocaleDateString('ja-JP');
-            const time = now.toLocaleTimeString('ja-JP');
-
-            const record = { id, name, date, time };
-            attendanceData.push(record);
-
-            // テーブルに追加
-            const row = `<tr class="present"><td>✓</td><td>${id}</td><td>${name}</td><td>${date}</td><td>${time}</td></tr>`;
-            listBody.insertAdjacentHTML("afterbegin", row);
-
-            flashSuccess();
         }
 
         // 学生リスト読み込み
@@ -223,39 +237,50 @@
 
             const reader = new FileReader();
             reader.onload = function(e) {
-                const text = e.target.result;
-                const lines = text.split(/\r\n|\n/);
+                try {
+                    const text = e.target.result;
+                    const lines = text.split(/\r\n|\n/);
 
-                studentList.clear();
-                attendedIds.clear();
-                attendanceData = [];
+                    studentList.clear();
+                    attendedIds.clear();
+                    attendanceData = [];
 
-                let validCount = 0;
-                for (let i = 0; i < lines.length; i++) {
-                    const line = lines[i].trim();
-                    if (!line || line.startsWith('学籍番号')) continue; // ヘッダースキップ
+                    let validCount = 0;
+                    for (let i = 0; i < lines.length; i++) {
+                        const line = lines[i].trim();
+                        if (!line || line.startsWith('学籍番号')) continue; // ヘッダースキップ
 
-                    const parts = line.split(',');
-                    if (parts.length >= 2) {
-                        const id = parts[0].trim().toUpperCase(); // 大文字に正規化
-                        const name = parts[1].trim();
-                        if (id && name && /^[A-Z0-9]+$/.test(id)) {
-                            studentList.set(id, name);
-                            validCount++;
+                        const parts = line.split(',');
+                        if (parts.length >= 2) {
+                            const id = parts[0].trim().toUpperCase(); // 大文字に正規化
+                            const name = parts[1].trim();
+                            if (id && name && /^[A-Z0-9]+$/.test(id)) {
+                                studentList.set(id, name);
+                                validCount++;
+                            }
                         }
                     }
-                }
 
-                if (validCount === 0) {
-                    alert('有効な学生データが見つかりませんでした');
+                    if (validCount === 0) {
+                        alert('有効な学生データが見つかりませんでした');
+                        studentList.clear();
+                        updateMode();
+                        return;
+                    }
+
+                    alert(`${validCount}名の学生を登録しました`);
+                    updateMode();
+                    updateRegisteredList();
+                } catch (error) {
+                    console.error('学生リスト読み込みエラー:', error);
+                    alert('学生リストの読み込みに失敗しました: ' + error.message);
                     studentList.clear();
                     updateMode();
-                    return;
                 }
-
-                alert(`${validCount}名の学生を登録しました`);
-                updateMode();
-                updateRegisteredList();
+            };
+            reader.onerror = function() {
+                console.error('ファイル読み込みエラー');
+                alert('ファイルの読み込みに失敗しました');
             };
             reader.readAsText(file, 'UTF-8');
         }
@@ -286,20 +311,24 @@
 
         // 登録モードのリスト更新
         function updateRegisteredList() {
-            listBody.innerHTML = '';
+            try {
+                listBody.innerHTML = '';
 
-            studentList.forEach((name, id) => {
-                const attended = attendanceData.find(r => r.id === id);
-                if (attended) {
-                    const row = `<tr class="present"><td>✓ 出席</td><td>${id}</td><td>${name}</td><td>${attended.date}</td><td>${attended.time}</td></tr>`;
-                    listBody.insertAdjacentHTML('beforeend', row);
-                } else {
-                    const row = `<tr class="absent"><td>✗ 未出席</td><td>${id}</td><td>${name}</td><td>-</td><td>-</td></tr>`;
-                    listBody.insertAdjacentHTML('beforeend', row);
-                }
-            });
+                studentList.forEach((name, id) => {
+                    const attended = attendanceData.find(r => r.id === id);
+                    if (attended) {
+                        const row = `<tr class="present"><td>✓ 出席</td><td>${id}</td><td>${name}</td><td>${attended.date}</td><td>${attended.time}</td></tr>`;
+                        listBody.insertAdjacentHTML('beforeend', row);
+                    } else {
+                        const row = `<tr class="absent"><td>✗ 未出席</td><td>${id}</td><td>${name}</td><td>-</td><td>-</td></tr>`;
+                        listBody.insertAdjacentHTML('beforeend', row);
+                    }
+                });
 
-            updateStats();
+                updateStats();
+            } catch (error) {
+                console.error('リスト更新エラー:', error);
+            }
         }
 
         // 学生リストクリア
